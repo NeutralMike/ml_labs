@@ -1,0 +1,5 @@
+[['gaussian' 'manhattan' '0.2' '0.9147682039475865']
+ ['gaussian' 'euclid' '0.2' '0.853834613105583']
+ ['triangular' 'euclid' '0.2' '0.6993631573761288']
+ ['triweight' 'euclid' '0.2' '0.6993631573761288']
+ ['quartic' 'euclid' '0.2' '0.6993631573761288']]
