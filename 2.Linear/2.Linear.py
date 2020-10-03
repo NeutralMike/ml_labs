@@ -1,16 +1,15 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[120]:
+# In[11]:
 
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib
-# matplotlib.use('tkagg')
+from deap import creator, base, tools, algorithms
 
 
-# In[141]:
+# In[12]:
 
 
 class LinearRegression:
@@ -46,7 +45,7 @@ class LinearRegression:
     def rmse_loss(self, y_pred):
         return np.sqrt((((y_pred - self.y_train)**2).sum())/self.N_train)
 
-    def SVM(self):
+    def SVD(self):
         self.w = np.linalg.pinv(self.X_train) @ self.y_train
 
 
@@ -64,51 +63,33 @@ class LinearRegression:
             self.w = self.w - lr * grad
 
 
-    def genetic(self, n_epochs=16, loss_limit = 50000):
-        n_gens = 2**n_epochs
-        # print(n_gens)
-        number_len = 22
-        e_len = 5
-        gens = (np.random.sample((n_gens, self.M * number_len)) < 0.5).astype('int8')
-        for epoch in range(n_epochs):
-            # print(epoch)
-            # print(gens.shape)
-            gens_loss = []
-            for gen in gens:
-                # print([float(int(gen[i+5])*2.)**((2**np.arange(e_len)*gen[1+5:e_len+1+5]).sum() + e_len + 1 - i ) for i in range(e_len+1,number_len)])
-                # print(-1*sum([2.**((2**np.arange(e_len)*gen[1+5:e_len+1+5]).sum() + e_len + 1 - i ) for i in range(e_len+1,number_len)]))
-                # print([float(int(gen[i+5])*2.)for i in range(e_len+1,number_len)])
-                # print((-1**int(gen[0+m])) * sum([(gen[i+m]*2.)**((2**np.arange(e_len)*gen[1+m:e_len+1+m]).sum() + e_len + 1 - i ) for i in range(e_len+1,number_len)]))
-                w = np.array(
-                    [
-                        (-1**int(gen[0+m])) * sum([(2.**gen[i+m])**((2**np.arange(e_len)*gen[1+m:e_len+1+m]).sum() + e_len + 1 - i ) for i in range(e_len+1,number_len)])
-                        for m in range(0, self.M * number_len, number_len)
-                    ]
-                )
-                # print(w)
-                gens_loss.append(self.rmse_loss(self.X_train @ w))
-            gens_loss = np.array(gens_loss)
-            # print(gens_loss[gens_loss.argsort()])
-            sorted_indexes = gens_loss.argsort()
-            sorted_gens = gens[sorted_indexes]
-            n_gens = n_gens//2
-            gens = sorted_gens[np.where(gens_loss[sorted_indexes][:n_gens] < loss_limit)]
-            if gens.shape[0]<n_gens:
-                gens = np.concatenate((gens, (np.random.sample((n_gens-gens.shape[0], self.M * number_len)) < 0.5).astype('int8')),axis=0)
-            if n_gens > 1:
-                gens = np.array([[gens[n+((i%2) * (-1**(n%2)))][i] for i in range(self.M * number_len)] for n in range(n_gens)])
-                for n in range(n_gens):
-                    rand_i = np.random.randint(0, self.M*number_len)
-                    gens[n][rand_i] = -gens[n][rand_i]
-            # print(gens.shape)
-        top_gen = gens[0]
-        self.w = np.array(
-            [
-                (-1**int(top_gen[0+m])) * np.array([(2.**top_gen[i+m])**((2**np.arange(e_len)*top_gen[1+m:e_len+1+m]).sum() + e_len + 1 - i ) for i in range(e_len+1,number_len)]).sum()
-                for m in range(0, self.M * number_len, number_len)
-            ]
-        )
+    def genetic(self, n_epochs=40):
+        creator.create("FitnessMax", base.Fitness, weights=(-1.0,))
+        creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
 
+        toolbox = base.Toolbox()
+
+        toolbox.register("attr_float", np.random.random)
+        toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.attr_float, n=self.M)
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+
+        def eval_def(individual):
+            return self.rmse_loss(self.X_train @ individual),
+
+        toolbox.register("evaluate", eval_def)
+        toolbox.register("mate", tools.cxTwoPoint)
+        toolbox.register("mutate", tools.mutFlipBit, indpb=0.05)
+        toolbox.register("select", tools.selTournament, tournsize=3)
+
+        population = toolbox.population(n=300)
+
+        for gen in range(n_epochs):
+            offspring = algorithms.varAnd(population, toolbox, cxpb=0.5, mutpb=0.1)
+            fits = toolbox.map(toolbox.evaluate, offspring)
+            for fit, ind in zip(fits, offspring):
+                ind.fitness.values = fit
+            population = toolbox.select(offspring, k=len(population))
+        self.w = tools.selBest(population, k=1)[0]
 
 
     def nrmse_score(self, X_test=None, y_test=None):
@@ -121,32 +102,31 @@ class LinearRegression:
 
 
     def smape_score(self, X_test=None, y_test=None):
-        if X_test:
-            self.X_test = X_test
-        if X_test:
-            self.y_test = y_test
+        if X_test and y_test:
+            self.X_test = np.array(X_test)
+            self.y_test = np.array(y_test)
+            self.N_test = self.y_test.shape[0]
         y_pred = self.X_test  @ self.w
-        return 100/self.y_test.shape[0] * (2*np.abs(y_pred - self.y_test)/(np.abs(self.y_test) + np.abs(y_pred))).sum()
+        return (100/self.N_test) * (np.absolute(self.y_test - y_pred)/(np.absolute(self.y_test) + np.absolute(y_pred))).sum()
 
 
-# In[142]:
+# In[13]:
 
 
 reg = LinearRegression()
+reg.fit_from_file("6.txt")
 
 
-# In[72]:
+# In[14]:
 
 
-reg.fit_from_file("1.txt")
-reg.SVM()
-print(reg.smape_score())
+reg.SVD()
+print('SVD smape: ', reg.smape_score())
 
 
-# In[87]:
+# In[15]:
 
 
-reg.fit_from_file("2.txt")
 grad_res = []
 for n_epochs in [100, 500, 1000, 10000, 100000]:
     for batch_size in [100, 75, 50, 20, 10, 5 ,1]:
@@ -155,70 +135,71 @@ for n_epochs in [100, 500, 1000, 10000, 100000]:
             smape = reg.smape_score()
             nrmse = reg.nrmse_score()
             grad_res.append([lr, batch_size, n_epochs, smape, nrmse])
-            # print('gradient: lr_%f, batch_size_%d, n_epochs_%d',smape)
+            print('gradient: lr_%f, batch_size_%d, n_epochs_%d'%(lr, batch_size, n_epochs),smape)
 
 sorted_res = sorted(grad_res, key=lambda x: x[4])[:10]
 print('grad_top10: lr    batch size  n epochs    smape   nrmse\n', '\n'.join([' '.join(map(str, line)) for line in sorted_res]))
 
 
-# In[88]:
+# In[16]:
 
 
 grad_top5 = sorted_res
 
 
-# In[90]:
+# In[17]:
 
 
 print('grad_top5: lr    batch size  n epochs    smape   nrmse\n', '\n'.join([' '.join(map(str, line)) for line in grad_top5]))
 
 
-# In[98]:
+# In[18]:
 
 
 grad_x_plot = list(range(100, 1000, 100))
 grad_x_plot.extend(list(range(1000, 10000, 1000)))
-grad_x_plot.extend(list(range(10000, 110000, 10000)))
+grad_x_plot.extend(list(range(10000, 100001, 10000)))
 grad_y_plot = []
 for n_epochs in grad_x_plot:
     print(n_epochs, end='... ')
-    grad_top1 = lr=grad_top5[0]
+    grad_top1 = grad_top5[0]
     reg.gradient(lr=grad_top1[0], batch_size=grad_top1[1], n_epochs=n_epochs)
+    # reg.gradient(n_epochs=n_epochs)
     grad_y_plot.append(reg.smape_score())
 
 
-# In[133]:
+# In[19]:
 
 
 grad_x_plot_copy = grad_x_plot.copy()
 grad_y_plot_copy = grad_y_plot.copy()
 
 
-# In[132]:
+# In[20]:
 
 
 get_ipython().run_line_magic('matplotlib', 'inline')
-plt.plot(grad_x_plot, grad_y_plot)
+plt.plot([ s/1000 for s in grad_x_plot], grad_y_plot)
 plt.title("Gradient")
 plt.ylabel('SMAPE', fontsize=16)
-plt.xlabel('n epochs', fontsize=16)
+plt.xlabel('10^3 n epochs', fontsize=16)
+plt.xticks(list(range(0,101,10)))
+plt.yticks(list(range(int(min(grad_y_plot)//10)*10, int(max(grad_y_plot)//10 +2)*10,10)))
 plt.show()
 
 
-# In[74]:
+# In[21]:
 
 
-reg.fit_from_file("3.txt")
 reg.genetic()
 print(reg.nrmse_score())
 print(reg.smape_score())
 
 
-# In[143]:
+# In[22]:
 
 
-reg.fit_from_file("3.txt")
-genetic_x_plot = list(range(20))
+genetic_x_plot = list(range(40))
 genetic_y_plot = []
 for n_epochs in genetic_x_plot:
     print(n_epochs, end='... ')
@@ -227,14 +208,14 @@ for n_epochs in genetic_x_plot:
     print(' '.join(map(str, genetic_y_plot)))
 
 
-# In[ ]:
+# In[23]:
 
 
 genetic_x_plot_copy = genetic_x_plot.copy()
 genetic_y_plot_copy = genetic_y_plot.copy()
 
 
-# In[150]:
+# In[25]:
 
 
 get_ipython().run_line_magic('matplotlib', 'inline')
@@ -242,6 +223,19 @@ plt.plot(genetic_x_plot, genetic_y_plot)
 plt.title("Genetic")
 plt.ylabel('SMAPE', fontsize=16)
 plt.xlabel('n epochs', fontsize=16)
-plt.xticks(list(range(20)))
+plt.xticks(list(range(0,40,5)))
+plt.yticks(list(range(int(min(genetic_y_plot)//5)*5, int(max(genetic_y_plot)//5+2)*5, 5)))
 plt.show()
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
 
