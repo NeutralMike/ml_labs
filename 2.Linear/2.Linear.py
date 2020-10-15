@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[11]:
+# In[174]:
 
 
 import numpy as np
@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from deap import creator, base, tools, algorithms
 
 
-# In[12]:
+# In[175]:
 
 
 class LinearRegression:
@@ -45,11 +45,10 @@ class LinearRegression:
     def rmse_loss(self, y_pred):
         return np.sqrt((((y_pred - self.y_train)**2).sum())/self.N_train)
 
-    def SVD(self):
-        self.w = np.linalg.pinv(self.X_train) @ self.y_train
+    def SVD(self, tay=1e-3):
+        self.w =             self.X_train.T @ np.linalg.inv(self.X_train @ self.X_train.T + (1/2 * tay * np.eye(self.X_train.shape[0]))) @ self.y_train
 
-
-    def gradient(self, lr=0.01, batch_size=75, n_epochs=100000):
+    def gradient(self, tay=.1, lr=.01, batch_size=5, n_epochs=1000):
 
         def loss_derivative(y, y_pred):
             return -2 * (y - y_pred)
@@ -58,9 +57,9 @@ class LinearRegression:
             if it % batch_size == 0:
                 y_pred = self.X_train @ self.w
                 loss_der = loss_derivative(self.y_train, y_pred)
-                grad = (np.array([self.X_train[n]*loss_der[n] for n in range(self.N_train)])).sum(axis=0)/self.N_train
+                grad = (np.array([self.X_train[n]*loss_der[n] for n in range(self.N_train)])).sum(axis=0)/self.N_train                    + tay * self.w
                 # print('grad:', ' '.join(map(str, grad)))
-            self.w = self.w - lr * grad
+            self.w = self.w * (1 - lr * tay) - lr * grad
 
 
     def genetic(self, n_epochs=40):
@@ -110,85 +109,112 @@ class LinearRegression:
         return (100/self.N_test) * (np.absolute(self.y_test - y_pred)/(np.absolute(self.y_test) + np.absolute(y_pred))).sum()
 
 
-# In[13]:
+# In[176]:
 
 
 reg = LinearRegression()
 reg.fit_from_file("6.txt")
 
 
-# In[14]:
+# In[177]:
 
 
 reg.SVD()
-print('SVD smape: ', reg.smape_score())
+print('SVD tay: %2f    smape: %4f' % (1e-3, reg.smape_score()))
+svd_x_plot = np.arange(0.01, 1.01, 0.01)
+svd_y_plot = []
+for tay in svd_x_plot:
+    reg.SVD(tay)
+    svd_y_plot.append(reg.smape_score())
 
 
-# In[15]:
-
-
-grad_res = []
-for n_epochs in [100, 500, 1000, 10000, 100000]:
-    for batch_size in [100, 75, 50, 20, 10, 5 ,1]:
-        for lr in 10.**np.arange(-4, -1):
-            reg.gradient(lr=lr, batch_size=batch_size, n_epochs=n_epochs)
-            smape = reg.smape_score()
-            nrmse = reg.nrmse_score()
-            grad_res.append([lr, batch_size, n_epochs, smape, nrmse])
-            print('gradient: lr_%f, batch_size_%d, n_epochs_%d'%(lr, batch_size, n_epochs),smape)
-
-sorted_res = sorted(grad_res, key=lambda x: x[4])[:10]
-print('grad_top10: lr    batch size  n epochs    smape   nrmse\n', '\n'.join([' '.join(map(str, line)) for line in sorted_res]))
-
-
-# In[16]:
-
-
-grad_top5 = sorted_res
-
-
-# In[17]:
-
-
-print('grad_top5: lr    batch size  n epochs    smape   nrmse\n', '\n'.join([' '.join(map(str, line)) for line in grad_top5]))
-
-
-# In[18]:
-
-
-grad_x_plot = list(range(100, 1000, 100))
-grad_x_plot.extend(list(range(1000, 10000, 1000)))
-grad_x_plot.extend(list(range(10000, 100001, 10000)))
-grad_y_plot = []
-for n_epochs in grad_x_plot:
-    print(n_epochs, end='... ')
-    grad_top1 = grad_top5[0]
-    reg.gradient(lr=grad_top1[0], batch_size=grad_top1[1], n_epochs=n_epochs)
-    # reg.gradient(n_epochs=n_epochs)
-    grad_y_plot.append(reg.smape_score())
-
-
-# In[19]:
-
-
-grad_x_plot_copy = grad_x_plot.copy()
-grad_y_plot_copy = grad_y_plot.copy()
-
-
-# In[20]:
+# In[178]:
 
 
 get_ipython().run_line_magic('matplotlib', 'inline')
-plt.plot([ s/1000 for s in grad_x_plot], grad_y_plot)
-plt.title("Gradient")
+plt.plot(svd_x_plot, svd_y_plot)
+plt.title("SVD")
 plt.ylabel('SMAPE', fontsize=16)
-plt.xlabel('10^3 n epochs', fontsize=16)
-plt.xticks(list(range(0,101,10)))
-plt.yticks(list(range(int(min(grad_y_plot)//10)*10, int(max(grad_y_plot)//10 +2)*10,10)))
+plt.xlabel('tay', fontsize=16)
+# plt.xticks(np.arange(0, 1.01, 0.1))
 plt.show()
 
 
-# In[21]:
+# In[179]:
+
+
+# grad_res = []
+# for n_epochs in [100, 500, 1000, 2000]:
+#     for batch_size in [100, 75, 50, 20, 10, 5 ,1]:
+#         for lr in 10.**np.arange(-4, -1):
+#             reg.gradient(lr=lr, batch_size=batch_size, n_epochs=n_epochs)
+#             smape = reg.smape_score()
+#             nrmse = reg.nrmse_score()
+#             grad_res.append([lr, batch_size, n_epochs, smape, nrmse])
+#             print('gradient: lr_%f, batch_size_%d, n_epochs_%d'%(lr, batch_size, n_epochs),smape)
+#
+# sorted_res = sorted(grad_res, key=lambda x: x[4])[:10]
+# print('grad_top10: lr    batch size  n epochs    smape   nrmse\n', '\n'.join([' '.join(map(str, line)) for line in sorted_res]))
+
+
+# In[180]:
+
+
+# grad_top5 = sorted_res
+
+
+# In[181]:
+
+
+# print('grad_top5: lr    batch size  n epochs    smape   nrmse\n', '\n'.join([' '.join(map(str, line)) for line in grad_top5]))
+
+
+# In[182]:
+
+
+grad_x_plot = list(range(0, 2001, 100))
+grad_y_plot = []
+for n_epochs in grad_x_plot:
+    print(n_epochs, end='... ')
+    # grad_top1 = grad_top5[0]
+    # reg.gradient(lr=grad_top1[0], batch_size=grad_top1[1], n_epochs=n_epochs)
+    reg.gradient(n_epochs=n_epochs)
+    grad_y_plot.append(reg.smape_score())
+
+
+# In[183]:
+
+
+get_ipython().run_line_magic('matplotlib', 'inline')
+plt.plot([ s for s in grad_x_plot], grad_y_plot)
+plt.title("Gradient")
+plt.ylabel('SMAPE', fontsize=16)
+plt.xlabel('n epochs', fontsize=16)
+plt.show()
+
+
+# In[184]:
+
+
+grad_x_plot = np.arange(0.01, 1.01, 0.01)
+grad_y_plot = []
+for tay in grad_x_plot:
+    reg.gradient(tay=tay)
+    grad_y_plot.append(reg.smape_score())
+
+
+# In[185]:
+
+
+get_ipython().run_line_magic('matplotlib', 'inline')
+plt.plot(grad_x_plot, grad_y_plot)
+plt.title("Gradient")
+plt.ylabel('SMAPE', fontsize=16)
+plt.xlabel('tay', fontsize=16)
+plt.show()
+
+
+# In[186]:
 
 
 reg.genetic()
@@ -196,7 +222,7 @@ print(reg.nrmse_score())
 print(reg.smape_score())
 
 
-# In[22]:
+# In[187]:
 
 
 genetic_x_plot = list(range(40))
@@ -208,14 +234,14 @@ for n_epochs in genetic_x_plot:
     print(' '.join(map(str, genetic_y_plot)))
 
 
-# In[23]:
+# In[188]:
 
 
 genetic_x_plot_copy = genetic_x_plot.copy()
 genetic_y_plot_copy = genetic_y_plot.copy()
 
 
-# In[25]:
+# In[189]:
 
 
 get_ipython().run_line_magic('matplotlib', 'inline')
@@ -223,19 +249,7 @@ plt.plot(genetic_x_plot, genetic_y_plot)
 plt.title("Genetic")
 plt.ylabel('SMAPE', fontsize=16)
 plt.xlabel('n epochs', fontsize=16)
-plt.xticks(list(range(0,40,5)))
+plt.xticks(list(range(0,41,5)))
 plt.yticks(list(range(int(min(genetic_y_plot)//5)*5, int(max(genetic_y_plot)//5+2)*5, 5)))
 plt.show()
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
 
